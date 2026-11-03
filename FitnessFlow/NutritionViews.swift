@@ -117,7 +117,7 @@ struct AddFoodView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Schnell per KI schätzen") {
+                Section {
                     TextField("z. B. 250 g Hähnchen mit Reis", text: $input)
                     Button("Schätzung erstellen") {
                         let estimate = FoodEstimator.estimate(input)
@@ -128,6 +128,8 @@ struct AddFoodView: View {
                         carbs = estimate.carbs
                         fat = estimate.fat
                     }
+                } header: {
+                    Text("Schnell per KI schätzen")
                 } footer: {
                     Text("Die Werte sind nur eine Schätzung. Bitte prüfe sie vor dem Speichern.")
                 }
