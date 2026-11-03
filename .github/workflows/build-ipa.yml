@@ -1,0 +1,29 @@
+name: Build unsigned iPhone IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Compile and package IPA
+        run: |
+          chmod +x scripts/build-unsigned-ipa.sh
+          ./scripts/build-unsigned-ipa.sh
+
+      - name: Verify IPA structure
+        run: |
+          unzip -l build-output/FitnessFlow-unsigned.ipa | grep 'Payload/FitnessFlow.app/'
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: FitnessFlow-unsigned-ipa
+          path: build-output/FitnessFlow-unsigned.ipa
+          if-no-files-found: error
