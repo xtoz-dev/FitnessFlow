@@ -1,5 +1,70 @@
 import SwiftUI
 import AVFoundation
+import Foundation
+
+private struct OpenFoodFactsResponse: Decodable {
+    let status: Int?
+    let product: OpenFoodFactsProduct?
+}
+
+private struct OpenFoodFactsProduct: Decodable {
+    let productName: String?
+    let nutriments: OpenFoodFactsNutrients?
+
+    enum CodingKeys: String, CodingKey {
+        case productName = "product_name"
+        case nutriments
+    }
+}
+
+private struct OpenFoodFactsNutrients: Decodable {
+    let calories: Double?
+    let protein: Double?
+    let carbs: Double?
+    let fat: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case calories = "energy-kcal_100g"
+        case protein = "proteins_100g"
+        case carbs = "carbohydrates_100g"
+        case fat = "fat_100g"
+    }
+}
+
+private enum OpenFoodFactsLookup {
+    static func product(for barcode: String) async -> SavedFoodProduct? {
+        let trimmedBarcode = barcode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedBarcode.isEmpty,
+              let escapedBarcode = trimmedBarcode.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "https://world.openfoodfacts.org/api/v2/product/\(escapedBarcode).json?fields=product_name,nutriments") else {
+            return nil
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 12
+        request.setValue("FitnessFlow/1.1 (https://github.com/xtoz-dev/FitnessFlow)", forHTTPHeaderField: "User-Agent")
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200,
+              let decoded = try? JSONDecoder().decode(OpenFoodFactsResponse.self, from: data),
+              decoded.status == 1,
+              let name = decoded.product?.productName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty else {
+            return nil
+        }
+
+        let nutrients = decoded.product?.nutriments
+        return SavedFoodProduct(
+            barcode: trimmedBarcode,
+            name: name,
+            caloriesPer100g: nutrients?.calories ?? 0,
+            proteinPer100g: nutrients?.protein ?? 0,
+            carbsPer100g: nutrients?.carbs ?? 0,
+            fatPer100g: nutrients?.fat ?? 0
+        )
+    }
+}
 
 struct NutritionView: View {
     @EnvironmentObject private var store: AppStore
@@ -242,6 +307,9 @@ struct ProductEntryView: View {
     @State private var carbsPer100g = 0.0
     @State private var fatPer100g = 0.0
     @State private var loaded = false
+    @State private var isLookingUp = false
+    @State private var lookupMessage: String?
+    @State private var lookupSucceeded = false
 
     private var factor: Double { amount / 100 }
     private var calories: Int { Int((caloriesPer100g * factor).rounded()) }
@@ -255,6 +323,31 @@ struct ProductEntryView: View {
                 Text("Produkt")
             } footer: {
                 Text("Gespeicherte Produkte werden beim nächsten Scan desselben Barcodes sofort wiederverwendet.")
+            }
+
+            Section {
+                Button {
+                    Task { await lookupProductOnline() }
+                } label: {
+                    HStack {
+                        Label("Nährwerte online suchen", systemImage: "cloud.magnifyingglass")
+                        Spacer()
+                        if isLookingUp {
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(isLookingUp)
+
+                if let lookupMessage {
+                    Label(lookupMessage, systemImage: lookupSucceeded ? "checkmark.circle.fill" : "exclamationmark.circle")
+                        .font(.footnote)
+                        .foregroundStyle(lookupSucceeded ? .green : .secondary)
+                }
+            } header: {
+                Text("Barcode-Datenbank")
+            } footer: {
+                Text("Die Suche nutzt Open Food Facts. Überprüfe die übernommenen Werte mit der Verpackung, bevor du speicherst.")
             }
 
             Section("Nährwerte pro 100 g") {
@@ -304,13 +397,41 @@ struct ProductEntryView: View {
         .onAppear {
             guard !loaded else { return }
             loaded = true
-            guard let product = store.product(for: barcode) else { return }
-            name = product.name
-            caloriesPer100g = product.caloriesPer100g
-            proteinPer100g = product.proteinPer100g
-            carbsPer100g = product.carbsPer100g
-            fatPer100g = product.fatPer100g
+
+            if let product = store.product(for: barcode) {
+                apply(product)
+                lookupSucceeded = true
+                lookupMessage = "Gespeichertes Produkt geladen."
+            } else {
+                Task { await lookupProductOnline() }
+            }
         }
+    }
+
+    @MainActor
+    private func lookupProductOnline() async {
+        guard !isLookingUp else { return }
+        isLookingUp = true
+        lookupMessage = nil
+        lookupSucceeded = false
+        defer { isLookingUp = false }
+
+        guard let product = await OpenFoodFactsLookup.product(for: barcode) else {
+            lookupMessage = "Kein Online-Treffer. Trage die Werte von der Verpackung ein und speichere sie für zukünftige Scans."
+            return
+        }
+
+        apply(product)
+        lookupSucceeded = true
+        lookupMessage = "Produktdaten geladen. Bitte mit der Verpackung prüfen."
+    }
+
+    private func apply(_ product: SavedFoodProduct) {
+        name = product.name
+        caloriesPer100g = product.caloriesPer100g
+        proteinPer100g = product.proteinPer100g
+        carbsPer100g = product.carbsPer100g
+        fatPer100g = product.fatPer100g
     }
 }
 
