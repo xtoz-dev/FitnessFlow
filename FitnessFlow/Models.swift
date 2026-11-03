@@ -68,6 +68,22 @@ struct FoodEntry: Identifiable, Codable {
     var date = Date()
 }
 
+struct WeightEntry: Identifiable, Codable {
+    var id = UUID()
+    var weightKG: Double
+    var date = Date()
+}
+
+struct SavedFoodProduct: Identifiable, Codable, Hashable {
+    var id = UUID()
+    var barcode: String
+    var name: String
+    var caloriesPer100g: Double
+    var proteinPer100g: Double
+    var carbsPer100g: Double
+    var fatPer100g: Double
+}
+
 enum CardioKind: String, CaseIterable, Codable, Identifiable { case laufen = "Laufen", radfahren = "Radfahren", sonstiges = "Sonstiges"; var id: String { rawValue } }
 struct CardioEntry: Identifiable, Codable {
     var id = UUID()
