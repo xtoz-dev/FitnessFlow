@@ -42,7 +42,6 @@ struct WorkoutHistoryView: View {
         }
     }
 }
-}
 
 struct ActiveWorkoutView: View {
     @EnvironmentObject private var store: AppStore
