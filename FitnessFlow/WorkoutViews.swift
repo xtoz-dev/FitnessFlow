@@ -1,4 +1,6 @@
 import SwiftUI
+import MapKit
+import CoreLocation
 
 struct WorkoutRootView: View {
     @EnvironmentObject private var store: AppStore
@@ -9,7 +11,37 @@ struct WorkoutRootView: View {
 
 struct WorkoutHistoryView: View {
     @EnvironmentObject private var store: AppStore
-    var body: some View { NavigationStack { List { if store.sessions.isEmpty { ContentUnavailableView("Noch keine Sessions", systemImage: "dumbbell", description: Text("Starte über Heute oder deinen Trainingsplan.")) } else { Section("Letzte Einheiten") { ForEach(store.sessions) { session in HStack { Image(systemName: "checkmark.circle.fill").foregroundStyle(.mint); VStack(alignment: .leading) { Text(session.title).font(.headline); Text(session.date.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary) }; Spacer(); VStack(alignment: .trailing) { Text("\(Int(session.volume)) kg").font(.subheadline.bold()); Text("\(session.durationSeconds / 60) Min.").font(.caption).foregroundStyle(.secondary) } } } } } }.navigationTitle("Training") } }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if store.sessions.isEmpty {
+                    ContentUnavailableView("Noch keine Sessions", systemImage: "dumbbell", description: Text("Starte über Heute oder deinen Trainingsplan."))
+                } else {
+                    Section("Letzte Einheiten") {
+                        ForEach(store.sessions) { session in
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.mint)
+                                VStack(alignment: .leading) {
+                                    Text(session.title).font(.headline)
+                                    Text(session.date.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                VStack(alignment: .trailing) {
+                                    Text("\(Int(session.volume)) kg").font(.subheadline.bold())
+                                    Text("\(session.durationSeconds / 60) Min.").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .onDelete { offsets in store.sessions.remove(atOffsets: offsets) }
+                    }
+                }
+            }
+            .navigationTitle("Training")
+            .toolbar { EditButton() }
+        }
+    }
+}
 }
 
 struct ActiveWorkoutView: View {
@@ -63,8 +95,180 @@ struct ExercisePicker: View {
 }
 
 struct CardioEntryView: View {
-    @EnvironmentObject private var store: AppStore; @Environment(\.dismiss) private var dismiss
-    @State private var type: CardioKind = .laufen; @State private var duration = 30; @State private var distance = 5.0
-    var calories: Int { let factor = type == .radfahren ? 7 : 10; return duration * factor }
-    var body: some View { NavigationStack { Form { Picker("Aktivität", selection: $type) { ForEach(CardioKind.allCases) { Text($0.rawValue).tag($0) } }; Stepper("Dauer: \(duration) Minuten", value: $duration, in: 1...600); HStack { Text("Distanz"); Spacer(); TextField("km", value: $distance, format: .number.precision(.fractionLength(1))).keyboardType(.decimalPad).multilineTextAlignment(.trailing); Text("km") }; LabeledContent("Geschätzt", value: "~\(calories) kcal") }.navigationTitle("Cardio eintragen").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Speichern") { store.cardio.insert(CardioEntry(kind: type, durationMinutes: duration, distanceKM: distance, calories: calories), at: 0); dismiss() } }; ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } } } } }
+    @EnvironmentObject private var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var tracker = LocationTracker()
+    @State private var type: CardioKind = .laufen
+    @State private var manualDuration = 30
+    @State private var manualDistance = 5.0
+    @State private var useGPS = true
+    @State private var cameraPosition: MapCameraPosition = .automatic
+
+    private var duration: Int {
+        tracker.isTracking || !tracker.route.isEmpty ? max(1, tracker.elapsedMinutes) : manualDuration
+    }
+    private var distance: Double {
+        tracker.isTracking || !tracker.route.isEmpty ? tracker.distanceMeters / 1000 : manualDistance
+    }
+    private var calories: Int {
+        let factor = type == .radfahren ? 7 : 10
+        return duration * factor
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Aktivität") {
+                    Picker("Art", selection: $type) {
+                        ForEach(CardioKind.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    Toggle("Mit GPS aufzeichnen", isOn: $useGPS)
+                }
+
+                if useGPS {
+                    Section("Live-Route") {
+                        Map(position: $cameraPosition) {
+                            if tracker.route.count > 1 {
+                                MapPolyline(coordinates: tracker.route.map {
+                                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                                })
+                                .stroke(.mint, lineWidth: 5)
+                            }
+                        }
+                        .frame(height: 240)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                        LabeledContent("Distanz", value: String(format: "%.2f km", distance))
+                        LabeledContent("Zeit", value: "\\(duration) Min.")
+                        Text(tracker.statusMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Button(tracker.isTracking ? "GPS-Aufzeichnung beenden" : "GPS starten") {
+                            if tracker.isTracking {
+                                tracker.stop()
+                            } else {
+                                tracker.start()
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(tracker.isTracking ? .orange : .mint)
+                    }
+                    .onChange(of: tracker.route.count) { _, _ in
+                        guard let last = tracker.route.last else { return }
+                        cameraPosition = .region(MKCoordinateRegion(
+                            center: CLLocationCoordinate2D(latitude: last.latitude, longitude: last.longitude),
+                            span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                        ))
+                    }
+                } else {
+                    Section("Manuell") {
+                        Stepper("Dauer: \\(manualDuration) Minuten", value: $manualDuration, in: 1...600)
+                        TextField("Distanz (km)", value: $manualDistance, format: .number)
+                            .keyboardType(.decimalPad)
+                    }
+                }
+
+                Section {
+                    LabeledContent("Geschätzter Verbrauch", value: "~\\(calories) kcal")
+                }
+            }
+            .navigationTitle("Cardio eintragen")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Abbrechen") { tracker.stop(); dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Speichern") {
+                        tracker.stop()
+                        store.cardio.insert(CardioEntry(
+                            kind: type,
+                            durationMinutes: duration,
+                            distanceKM: distance,
+                            calories: calories,
+                            route: tracker.route.isEmpty ? nil : tracker.route
+                        ), at: 0)
+                        dismiss()
+                    }
+                    .disabled(useGPS && tracker.route.isEmpty)
+                }
+            }
+        }
+    }
+}
+
+@MainActor
+final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
+    @Published private(set) var route: [RoutePoint] = []
+    @Published private(set) var isTracking = false
+    @Published private(set) var statusMessage = "GPS bereit"
+    private let manager = CLLocationManager()
+    private var startedAt: Date?
+    private var lastLocation: CLLocation?
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.activityType = .fitness
+    }
+
+    var distanceMeters: Double {
+        zip(route, route.dropFirst()).reduce(0) { total, pair in
+            let first = CLLocation(latitude: pair.0.latitude, longitude: pair.0.longitude)
+            let second = CLLocation(latitude: pair.1.latitude, longitude: pair.1.longitude)
+            return total + second.distance(from: first)
+        }
+    }
+
+    var elapsedMinutes: Int {
+        guard let startedAt else { return 0 }
+        return Int(Date().timeIntervalSince(startedAt) / 60)
+    }
+
+    func start() {
+        route = []
+        lastLocation = nil
+        startedAt = Date()
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            beginUpdates()
+        case .denied, .restricted:
+            statusMessage = "Standortzugriff ist deaktiviert. Aktiviere ihn in den iPhone-Einstellungen."
+        default:
+            statusMessage = "Standortfreigabe wird angefragt …"
+            manager.requestWhenInUseAuthorization()
+        }
+    }
+
+    func stop() {
+        manager.stopUpdatingLocation()
+        isTracking = false
+        if !route.isEmpty { statusMessage = "Route beendet" }
+    }
+
+    private func beginUpdates() {
+        statusMessage = "GPS wird aufgezeichnet"
+        isTracking = true
+        manager.startUpdatingLocation()
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if manager.authorizationStatus == .authorizedAlways || manager.authorizationStatus == .authorizedWhenInUse {
+            if startedAt != nil && !isTracking { beginUpdates() }
+        } else if manager.authorizationStatus == .denied || manager.authorizationStatus == .restricted {
+            statusMessage = "Standortzugriff wurde nicht erteilt."
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last, location.horizontalAccuracy >= 0 else { return }
+        if let lastLocation, location.distance(from: lastLocation) < 5 { return }
+        lastLocation = location
+        route.append(RoutePoint(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude))
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        statusMessage = "GPS-Fehler: \\(error.localizedDescription)"
+    }
 }
