@@ -5,6 +5,8 @@ final class AppStore: ObservableObject {
     @Published var plan: TrainingPlan { didSet { save(plan, key: "plan") } }
     @Published var sessions: [WorkoutSession] { didSet { save(sessions, key: "sessions") } }
     @Published var foods: [FoodEntry] { didSet { save(foods, key: "foods") } }
+    @Published var savedProducts: [SavedFoodProduct] { didSet { save(savedProducts, key: "savedProducts") } }
+    @Published var weights: [WeightEntry] { didSet { save(weights, key: "weights") } }
     @Published var cardio: [CardioEntry] { didSet { save(cardio, key: "cardio") } }
     @Published var currentSession: WorkoutSession?
     private let encoder = JSONEncoder()
@@ -13,12 +15,20 @@ final class AppStore: ObservableObject {
         plan = Self.load("plan") ?? Self.makePlan(days: 5)
         sessions = Self.load("sessions") ?? []
         foods = Self.load("foods") ?? []
+        savedProducts = Self.load("savedProducts") ?? []
+        weights = Self.load("weights") ?? []
         cardio = Self.load("cardio") ?? []
     }
     func changePlan(to days: Int) { plan = Self.makePlan(days: days) }
     func start(day: PlanDay) { currentSession = WorkoutSession(title: day.title, exercises: day.exercises.map { WorkoutExercise(exercise: $0, sets: (0..<3).map { _ in SetLog(weight: 0, reps: 10) }) }) }
     func finishCurrentSession() { if let currentSession { sessions.insert(currentSession, at: 0) }; currentSession = nil }
     func addFood(_ item: FoodEntry) { foods.insert(item, at: 0) }
+    func saveProduct(_ product: SavedFoodProduct) {
+        savedProducts.removeAll { $0.barcode == product.barcode }
+        savedProducts.insert(product, at: 0)
+    }
+    func product(for barcode: String) -> SavedFoodProduct? { savedProducts.first { $0.barcode == barcode } }
+    func addWeight(_ value: Double) { weights.insert(WeightEntry(weightKG: value), at: 0) }
     var todayFoods: [FoodEntry] { foods.filter { Calendar.current.isDateInToday($0.date) } }
     var caloriesToday: Int { todayFoods.reduce(0) { $0 + $1.calories } }
     var proteinToday: Double { todayFoods.reduce(0) { $0 + $1.protein } }
