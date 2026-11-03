@@ -12,8 +12,108 @@ struct ExerciseDetailView: View { let exercise: Exercise
 
 struct FitnessProgressView: View {
     @EnvironmentObject private var store: AppStore
-    var totalVolume: Double { store.sessions.reduce(0) { $0 + $1.volume } }
-    var body: some View { NavigationStack { ScrollView { VStack(spacing: 16) { HStack(spacing: 12) { MetricCard(title: "Sessions", value: "\(store.sessions.count)", caption: "gespeichert", icon: "calendar", color: .mint); MetricCard(title: "Volumen", value: "\(Int(totalVolume))", caption: "kg insgesamt", icon: "chart.bar.fill", color: .indigo) }; VStack(alignment: .leading, spacing: 12) { Text("Letzte Trainings").font(.headline); if store.sessions.isEmpty { Text("Nach deiner ersten Session siehst du hier deinen Fortschritt.").foregroundStyle(.secondary) } else { ForEach(store.sessions.prefix(6)) { s in HStack { Text(s.date.formatted(.dateTime.day().month())); Text(s.title); Spacer(); Text("\(Int(s.volume)) kg").font(.subheadline.bold()) } } } }.padding().background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20)); VStack(alignment: .leading, spacing: 12) { Text("Cardio").font(.headline); HStack { Text("\(store.cardio.count) Einträge"); Spacer(); Text("\(store.cardio.reduce(0) { $0 + $1.calories }) kcal").foregroundStyle(.orange) } }.frame(maxWidth: .infinity, alignment: .leading).padding().background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20)) }.padding() }.navigationTitle("Fortschritt") } }
+    @State private var showWeightEntry = false
+
+    private var latestWeight: WeightEntry? { store.weights.first }
+    private var bmi: String {
+        guard let latestWeight else { return "–" }
+        let heightMeters = 1.78
+        return String(format: "%.1f", latestWeight.weightKG / (heightMeters * heightMeters))
+    }
+    private var totalVolume: Double { store.sessions.reduce(0) { $0 + $1.volume } }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("Gewicht").font(.headline)
+                                Text(latestWeight.map { String(format: "%.1f kg", $0.weightKG) } ?? "Noch kein Eintrag")
+                                    .font(.title.bold())
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing) {
+                                Text("BMI").font(.caption).foregroundStyle(.secondary)
+                                Text(bmi).font(.title2.bold())
+                                Text("bei 178 cm").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Button { showWeightEntry = true } label: {
+                            Label("Gewicht eintragen", systemImage: "plus.circle.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.mint)
+                        if !store.weights.isEmpty {
+                            Divider()
+                            ForEach(store.weights.prefix(6)) { entry in
+                                HStack {
+                                    Text(entry.date.formatted(date: .abbreviated, time: .omitted))
+                                    Spacer()
+                                    Text(String(format: "%.1f kg", entry.weightKG)).fontWeight(.semibold)
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+
+                    HStack(spacing: 12) {
+                        MetricCard(title: "Sessions", value: "\(store.sessions.count)", caption: "gespeichert", icon: "calendar", color: .mint)
+                        MetricCard(title: "Volumen", value: "\(Int(totalVolume))", caption: "kg insgesamt", icon: "chart.bar.fill", color: .indigo)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Cardio").font(.headline)
+                        HStack {
+                            Text("\(store.cardio.count) Einträge")
+                            Spacer()
+                            Text("\(store.cardio.reduce(0) { $0 + $1.calories }) kcal").foregroundStyle(.orange)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+                }
+                .padding()
+            }
+            .navigationTitle("Fortschritt")
+            .sheet(isPresented: $showWeightEntry) { WeightEntryView() }
+        }
+    }
+}
+
+struct WeightEntryView: View {
+    @EnvironmentObject private var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var weight = 75.0
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Körpergewicht") {
+                    TextField("kg", value: $weight, format: .number)
+                        .keyboardType(.decimalPad)
+                    Text("Deine Größe ist für die BMI-Anzeige auf 178 cm eingestellt.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Gewicht eintragen")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Speichern") {
+                        guard (25...400).contains(weight) else { return }
+                        store.addWeight(weight)
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
 }
 
 struct CoachView: View {
