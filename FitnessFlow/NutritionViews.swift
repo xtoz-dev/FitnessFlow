@@ -14,7 +14,7 @@ struct NutritionRing: View { let value: Double; let label: String; let sublabel:
     var body: some View { ZStack { Circle().stroke(.quaternary, lineWidth: 9); Circle().trim(from: 0, to: min(value, 1)).stroke(.orange, style: StrokeStyle(lineWidth: 9, lineCap: .round)).rotationEffect(.degrees(-90)); VStack(spacing: 0) { Text(label).font(.headline.bold()); Text(sublabel).font(.caption2).foregroundStyle(.secondary) } }.frame(width: 84, height: 84) }
 }
 struct MacroColumn: View { let label: String; let value: String; let color: Color; var body: some View { VStack(spacing: 4) { Circle().fill(color).frame(width: 8); Text(value).font(.caption.bold()); Text(label).font(.caption2).foregroundStyle(.secondary).lineLimit(1) } } }
-struct FoodRow: View { let food: FoodEntry; var body: some View { HStack { Image(systemName: "fork.knife").foregroundStyle(.mint).frame(width: 28); VStack(alignment: .leading) { Text(food.name); Text("\(food.amount.formatted()) \(food.unit) · E \(Int(food.protein)) g · KH \(Int(food.carbs)) g · F \(Int(food.fat)) g").font(.caption).foregroundStyle(.secondary) }; Spacer(); Text("\(food.calories)").font(.headline); Text("kcal").font(.caption).foregroundStyle(.secondary) } }
+struct FoodRow: View { let food: FoodEntry; var body: some View { HStack { Image(systemName: "fork.knife").foregroundStyle(.mint).frame(width: 28); VStack(alignment: .leading) { Text(food.name); Text("\(food.amount.formatted()) \(food.unit) · E \(Int(food.protein)) g · KH \(Int(food.carbs)) g · F \(Int(food.fat)) g").font(.caption).foregroundStyle(.secondary) }; Spacer(); Text("\(food.calories)").font(.headline); Text("kcal").font(.caption).foregroundStyle(.secondary) } } }
 
 struct AddFoodView: View {
     @EnvironmentObject private var store: AppStore; @Environment(\.dismiss) private var dismiss
@@ -57,3 +57,4 @@ final class ScannerController: UIViewController, AVCaptureMetadataOutputObjectsD
 }
 
 extension Collection { subscript(safe index: Index) -> Element? { indices.contains(index) ? self[index] : nil } }
+
