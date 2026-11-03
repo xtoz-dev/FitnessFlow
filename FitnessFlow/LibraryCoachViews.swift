@@ -121,10 +121,35 @@ struct CoachView: View {
     @State private var messages: [CoachMessage] = [CoachMessage(text: "Hi! Ich bin dein FitnessFlow Coach. Frag mich zum Beispiel, wie du deinen Plan anpasst oder was du heute trainieren solltest.", fromUser: false)]
     @State private var input = ""
     var body: some View { NavigationStack { VStack { ScrollViewReader { proxy in ScrollView { LazyVStack(spacing: 12) { ForEach(messages) { message in HStack { if message.fromUser { Spacer() }; Text(message.text).padding(12).foregroundStyle(message.fromUser ? .white : .primary).background(message.fromUser ? Color.mint : Color.secondary.opacity(0.13), in: RoundedRectangle(cornerRadius: 18)); if !message.fromUser { Spacer() } }.id(message.id) } }.padding() }.onChange(of: messages.count) { _, _ in proxy.scrollTo(messages.last?.id, anchor: .bottom) } }; HStack { TextField("Frag deinen Coach …", text: $input, axis: .vertical).textFieldStyle(.roundedBorder); Button { send() } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }.disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }.padding() }.navigationTitle("KI-Coach").toolbar { Image(systemName: "sparkles").foregroundStyle(.mint) } } }
-    private func send() { let question = input.trimmingCharacters(in: .whitespacesAndNewlines); guard !question.isEmpty else { return }; messages.append(CoachMessage(text: question, fromUser: true)); input = ""; messages.append(CoachMessage(text: CoachEngine.answer(question, plan: store.plan, sessions: store.sessions), fromUser: false)) }
+    private func send() {
+        let question = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty else { return }
+        messages.append(CoachMessage(text: question, fromUser: true))
+        input = ""
+
+        let requestedDays = CoachEngine.requestedDayCount(in: question)
+        if let requestedDays {
+            store.changePlan(to: requestedDays)
+        }
+
+        var answer = CoachEngine.answer(question, plan: store.plan, sessions: store.sessions)
+        if let requestedDays {
+            answer += "\n\nIch habe deinen Plan direkt auf \\(requestedDays) Trainingstage umgestellt."
+        }
+        messages.append(CoachMessage(text: answer, fromUser: false))
+    }
 }
 struct CoachMessage: Identifiable { var id = UUID(); let text: String; let fromUser: Bool }
 enum CoachEngine {
+    static func requestedDayCount(in question: String) -> Int? {
+        let lower = question.lowercased()
+        guard lower.contains("tag") else { return nil }
+        if lower.contains("3") { return 3 }
+        if lower.contains("4") { return 4 }
+        if lower.contains("5") { return 5 }
+        return nil
+    }
+
     static func answer(_ question: String, plan: TrainingPlan, sessions: [WorkoutSession]) -> String {
         let q = question.lowercased()
         if q.contains("3") && q.contains("tag") { return "Für 3 Trainingstage empfehle ich Ganzkörper A/B/C. So stimulierst du jede große Muskelgruppe mehrmals pro Woche und hast ausreichend Regeneration. Wechsle im Plan-Tab auf „3 Tage“, um ihn direkt anzupassen." }
