@@ -134,7 +134,7 @@ struct CoachView: View {
 
         var answer = CoachEngine.answer(question, plan: store.plan, sessions: store.sessions)
         if let requestedDays {
-            answer += "\n\nIch habe deinen Plan direkt auf \\(requestedDays) Trainingstage umgestellt."
+            answer += "\n\nIch habe deinen Plan direkt auf \(requestedDays) Trainingstage umgestellt."
         }
         messages.append(CoachMessage(text: answer, fromUser: false))
     }
