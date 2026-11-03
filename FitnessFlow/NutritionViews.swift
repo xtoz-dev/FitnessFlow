@@ -192,26 +192,124 @@ enum FoodEstimator {
 struct BarcodeScannerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var scannedCode: String?
+    @State private var manualBarcode = ""
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                BarcodeScanner { scannedCode = $0 }
+            Group {
                 if let scannedCode {
-                    VStack(spacing: 8) {
-                        Text("Barcode erkannt").font(.headline)
-                        Text(scannedCode).font(.title3.monospaced()).textSelection(.enabled)
-                        Text("Für automatische Produktwerte kann später eine Lebensmittel-Datenbank angebunden werden.")
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.secondary)
-                    }
+                    ProductEntryView(barcode: scannedCode) { dismiss() }
                 } else {
-                    Text("Halte den Barcode in den Rahmen.").foregroundStyle(.secondary)
+                    VStack(spacing: 16) {
+                        BarcodeScanner { scannedCode = $0 }
+                            .clipShape(RoundedRectangle(cornerRadius: 18))
+                            .frame(height: 280)
+                        Text("Halte einen EAN-/UPC-Barcode in den Kamerarahmen.")
+                            .foregroundStyle(.secondary)
+                        HStack {
+                            TextField("Barcode manuell eingeben", text: $manualBarcode)
+                                .keyboardType(.numberPad)
+                                .textFieldStyle(.roundedBorder)
+                            Button("Weiter") {
+                                let value = manualBarcode.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if !value.isEmpty { scannedCode = value }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.mint)
+                        }
+                    }
+                    .padding()
                 }
             }
-            .padding()
-            .navigationTitle("Barcode scannen")
-            .toolbar { Button("Fertig") { dismiss() } }
+            .navigationTitle("Produkt scannen")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Fertig") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+struct ProductEntryView: View {
+    @EnvironmentObject private var store: AppStore
+    let barcode: String
+    let completed: () -> Void
+    @State private var name = ""
+    @State private var amount = 100.0
+    @State private var caloriesPer100g = 0.0
+    @State private var proteinPer100g = 0.0
+    @State private var carbsPer100g = 0.0
+    @State private var fatPer100g = 0.0
+    @State private var loaded = false
+
+    private var factor: Double { amount / 100 }
+    private var calories: Int { Int((caloriesPer100g * factor).rounded()) }
+
+    var body: some View {
+        Form {
+            Section {
+                Text(barcode).font(.caption.monospaced()).foregroundStyle(.secondary)
+                TextField("Produktname", text: $name)
+            } header: {
+                Text("Produkt")
+            } footer: {
+                Text("Gespeicherte Produkte werden beim nächsten Scan desselben Barcodes sofort wiederverwendet.")
+            }
+
+            Section("Nährwerte pro 100 g") {
+                TextField("Kalorien", value: $caloriesPer100g, format: .number).keyboardType(.decimalPad)
+                TextField("Eiweiß (g)", value: $proteinPer100g, format: .number).keyboardType(.decimalPad)
+                TextField("Kohlenhydrate (g)", value: $carbsPer100g, format: .number).keyboardType(.decimalPad)
+                TextField("Fett (g)", value: $fatPer100g, format: .number).keyboardType(.decimalPad)
+            }
+
+            Section("Deine Menge") {
+                TextField("Gramm", value: $amount, format: .number).keyboardType(.decimalPad)
+                LabeledContent("Kalorien für diese Portion", value: "\(calories) kcal")
+                LabeledContent("Eiweiß", value: String(format: "%.1f g", proteinPer100g * factor))
+                LabeledContent("Kohlenhydrate", value: String(format: "%.1f g", carbsPer100g * factor))
+                LabeledContent("Fett", value: String(format: "%.1f g", fatPer100g * factor))
+            }
+
+            Section {
+                Button("Produkt speichern & Mahlzeit hinzufügen") {
+                    guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, amount > 0 else { return }
+                    let product = SavedFoodProduct(
+                        barcode: barcode,
+                        name: name,
+                        caloriesPer100g: caloriesPer100g,
+                        proteinPer100g: proteinPer100g,
+                        carbsPer100g: carbsPer100g,
+                        fatPer100g: fatPer100g
+                    )
+                    store.saveProduct(product)
+                    store.addFood(FoodEntry(
+                        name: name,
+                        amount: amount,
+                        unit: "g",
+                        calories: calories,
+                        protein: proteinPer100g * factor,
+                        carbs: carbsPer100g * factor,
+                        fat: fatPer100g * factor
+                    ))
+                    completed()
+                }
+                .frame(maxWidth: .infinity)
+                .buttonStyle(.borderedProminent)
+                .tint(.mint)
+            }
+        }
+        .navigationTitle("Nährwerte")
+        .onAppear {
+            guard !loaded else { return }
+            loaded = true
+            guard let product = store.product(for: barcode) else { return }
+            name = product.name
+            caloriesPer100g = product.caloriesPer100g
+            proteinPer100g = product.proteinPer100g
+            carbsPer100g = product.carbsPer100g
+            fatPer100g = product.fatPer100g
         }
     }
 }
