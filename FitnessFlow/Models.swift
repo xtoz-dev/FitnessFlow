@@ -85,12 +85,20 @@ struct SavedFoodProduct: Identifiable, Codable, Hashable {
 }
 
 enum CardioKind: String, CaseIterable, Codable, Identifiable { case laufen = "Laufen", radfahren = "Radfahren", sonstiges = "Sonstiges"; var id: String { rawValue } }
+struct RoutePoint: Identifiable, Codable {
+    var id = UUID()
+    var latitude: Double
+    var longitude: Double
+    var timestamp = Date()
+}
+
 struct CardioEntry: Identifiable, Codable {
     var id = UUID()
     var kind: CardioKind
     var durationMinutes: Int
     var distanceKM: Double
     var calories: Int
+    var route: [RoutePoint]? = nil
     var date = Date()
 }
 
